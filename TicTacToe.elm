@@ -8,26 +8,46 @@ main = lift2 scene Window.dimensions gameState
 --------------------------------------------------------
 -- INPUT
 
-clicky : I.Input Cell 
-clicky = I.input { num = 0, mark = Blank }
+-- this is a signal of cells clicked during which turn
+clickedCell : I.Input Cell 
+clickedCell = I.input { index = 0, mark = Blank }
 
 --------------------------------------------------------
 -- MODEL 
 
+-- the mark is the visual X, O, or nothing in the cell.
 data Mark = Blank | X | O
-type Cell = { num : Int,
+-- a cell is a numbered space with a mark in it.
+type Cell = { index : Int,
               mark: Mark }
+-- It's always either X's or O's turn or the game isn't
+-- being played.
 data Turn = XTurn | OTurn | GameOver
 
-markFromTurn: Turn -> Mark
-markFromTurn x = if | x == XTurn -> X
-                    | x == OTurn -> O
-                    | otherwise  -> Blank
 
+-- if it's x's or o's turn, that's the mark that needs
+-- made during that turn.
+markFromTurn: Turn -> Mark
+markFromTurn turn = if | turn == XTurn -> X
+                       | turn == OTurn -> O
+                       | otherwise  -> Blank
+
+type WinningCombo = [Int]
+-- three in a row = a winner
+-- there are only 8 winning combinations
+winningCombos : [WinningCombo]
+winningCombos = [[0, 1, 2], [3, 4, 5], [6, 7, 8], 
+                 [0, 3, 6], [1, 4, 7], [2, 5, 8], 
+                 [0, 4, 8], [2, 4, 6]]
+
+-- the game is the array of marks and current turn
 type Game = { marks: (A.Array Mark), turn: Turn }
 
+-- a game starts with 9 blank cells and x's turn
 defaultGame : Game
 defaultGame = { marks = (A.initialize 9 <| always Blank), turn = XTurn }
+-- initialize 9 creates an array of length 9 and sets them
+-- all to "blank"
 
 --Sizes of things
 squareSize = 100
@@ -38,20 +58,23 @@ squareSize = 100
 -- UPDATE
 
 -- These check if there are three in a row of any mark
-check : A.Array Mark -> Mark -> Int -> Bool
-check x c a = 
-        let s = A.get a x
-        in if s == Just c then True else False
 
-itemsSame : A.Array Mark -> Mark -> [Int] -> Bool
-itemsSame array mark wins = foldl (&&) True (map (check array mark) wins)
+itemSame : a -> Int -> A.Array a -> Bool
+itemSame item index array = A.get index array == Just item
+
+
+itemsSame : A.Array Mark -> Mark -> WinningCombo -> Bool
+itemsSame array mark combo = 
+        let isSame index = itemSame mark index array
+        in  foldl (&&) True <| map isSame combo
+            -- if all marks of any combo are same, then win!
 
 checkWon : Game -> Mark -> Bool
 checkWon game mark =
-      let wins = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], 
-                 [2, 5, 8], [0, 4, 8], [2, 4, 6]]
-      in if foldl (||) False (map (itemsSame game.marks mark) wins) then True 
-            else False
+      let isSame = itemsSame game.marks mark
+          test   = map isSame winningCombos -- list of whether winning
+                                            -- combos match
+      in  foldl (||) False test -- if any combos match, then won!
 
 checkCat : Game -> Bool
 checkCat game = A.foldl (&&) True (A.map ((/=) Blank) game.marks)
@@ -66,7 +89,7 @@ stepTurn game =
 
 stepGame : Cell -> Game -> Game
 stepGame click game = 
-      let n = click.num
+      let n = click.index
           g = game
           t = game.turn
       in  { marks = A.set n (markFromTurn g.turn) g.marks, turn = stepTurn g }
@@ -80,10 +103,10 @@ checkGame n game =
          | otherwise    -> g
              
 
-newGame = stepGame {num = 4, mark = X } defaultGame
+newGame = stepGame {index = 4, mark = X } defaultGame
 
 gameState : Signal Game
-gameState = foldp checkGame defaultGame clicky.signal
+gameState = foldp checkGame defaultGame clickedCell.signal
 
 ---------------------------------------------------------
 -- VIEW
@@ -97,7 +120,7 @@ drawX       = collage s s [ traced (solid red) (segment (-m/2, -m/2) (m/2,m/2)),
 drawO       = collage s s [ outlined (solid blue) (circle ((m+8)/2))]
 -- this one is clickable and takes an n so it's clear which blank was clicked
 drawBlank n = collage s s [ filled lightGray (square (m+5)) ] 
-                            |> I.clickable clicky.handle { num = n, mark = Blank }
+                            |> I.clickable clickedCell.handle { index = n, mark = Blank }
 
 -- LINES
 lineVert = filled black (rect 5 boardHeight)
@@ -116,7 +139,7 @@ lines = collage boardWidth boardHeight [ moveX (-s/2) lineVert,
 toElement : Cell -> Element
 toElement c = 
       let x = c.mark 
-          n = c.num
+          n = c.index
       in if | x == X    -> drawX 
             | x == O    -> drawO  
             | otherwise -> drawBlank n
@@ -127,8 +150,8 @@ chopList x = (take 3 x) :: (take 3 <| drop 3 x) :: [take 3 <| drop 6 x]
 marksToCells : [Mark] -> [Cell]
 marksToCells x = 
         let n = length x
-        in if n > 1 then { num = 9 - n, mark = head x } :: marksToCells (tail x)
-                    else [ { num = 9 - n, mark = head x } ]
+        in if n > 1 then { index = 9 - n, mark = head x } :: marksToCells (tail x)
+                    else [ { index = 9 - n, mark = head x } ]
 
 
 marksToList : A.Array Mark -> [[Element]]
