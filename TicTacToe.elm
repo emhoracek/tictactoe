@@ -8,9 +8,11 @@ main = lift2 scene Window.dimensions gameState
 --------------------------------------------------------
 -- INPUT
 
+data Clickable = ClickableCell Cell | ClickableTurn Turn
+
 -- this is a signal of cells clicked during which turn
-clickedCell : I.Input Cell 
-clickedCell = I.input { index = 0, mark = Blank }
+clickedCell : I.Input Clickable
+clickedCell = I.input <| ClickableCell { index = 0, mark = Blank }
 
 --------------------------------------------------------
 -- MODEL 
@@ -22,7 +24,7 @@ type Cell = { index : Int,
               mark: Mark }
 -- It's always either X's or O's turn or the game isn't
 -- being played.
-data Turn = XTurn | OTurn | GameOver
+data Turn = NewGame | XTurn | OTurn | GameOver
 
 
 -- if it's x's or o's turn, that's the mark that needs
@@ -45,7 +47,7 @@ type Game = { marks: (A.Array Mark), turn: Turn }
 
 -- a game starts with 9 blank cells and x's turn
 defaultGame : Game
-defaultGame = { marks = (A.initialize 9 <| always Blank), turn = XTurn }
+defaultGame = { marks = (A.initialize 9 <| always Blank), turn = NewGame }
 -- initialize 9 creates an array of length 9 and sets them
 -- all to "blank"
 
@@ -94,9 +96,13 @@ stepGame click game =
           t = game.turn
       in  { marks = A.set n (markFromTurn g.turn) g.marks, turn = stepTurn g }
       
-checkGame : Cell -> Game -> Game
+checkGame : Clickable -> Game -> Game
 checkGame n game =
-      let g = stepGame n game in
+      let g = case n of 
+            ClickableCell cell -> stepGame cell game
+            ClickableTurn NewGame -> newGame
+            ClickableTurn NewGame -> game
+      in
       if | checkWon g X || 
            checkWon g O ||
            checkCat g   -> {marks = g.marks, turn = GameOver }
@@ -120,7 +126,7 @@ drawX       = collage s s [ traced (solid red) (segment (-m/2, -m/2) (m/2,m/2)),
 drawO       = collage s s [ outlined (solid blue) (circle ((m+8)/2))]
 -- this one is clickable and takes an n so it's clear which blank was clicked
 drawBlank n = collage s s [ filled lightGray (square (m+5)) ] 
-                            |> I.clickable clickedCell.handle { index = n, mark = Blank }
+                            |> I.clickable clickedCell.handle (ClickableCell { index = n, mark = Blank })
 
 -- LINES
 lineVert = filled black (rect 5 boardHeight)
@@ -174,13 +180,15 @@ statusBox g =
                    | checkWon g O -> "O won!"
                    | checkCat g   -> "CAT!!!!"
                    | otherwise    -> ""
-            mainBox color message = 
+            mainBox color message turn = 
                      collage 300 125 [ filled color (rect 300 50),
-                                       toForm <| centered <| toText <| message ++ m ]
-            xBox = mainBox red "X's Turn"
-            oBox = mainBox blue "O's Turn"
-            gameOverBox color = mainBox color "GAME OVER: "
-        in if | g.turn == GameOver -> gameOverBox yellow
+                                       toForm <| centered <| toText <| message ++ m ] |> I.clickable clickedCell.handle (ClickableTurn turn)
+            xBox = mainBox red "X's Turn" XTurn
+            oBox = mainBox blue "O's Turn" OTurn
+            newGamebox = mainBox green "New Game" NewGame 
+            gameOverBox color = mainBox color "GAME OVER: " NewGame
+        in if | g.turn == NewGame  -> newGamebox
+              | g.turn == GameOver -> gameOverBox yellow
               | checkCat g         -> gameOverBox orange
               | g.turn == XTurn    -> xBox
               | otherwise          -> oBox
